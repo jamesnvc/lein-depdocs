@@ -54,11 +54,24 @@ into the namespace."
       (-> (cond
             (vector? n) (vec c)
             (map? n) (into {} c)
-            true c)
+            :else c)
         (with-meta (meta n))))
     data))
 
-(defn analyze-source-for
+(def sym-name (comp name symbol))
+
+(defn nearest-numbered
+  [z]
+  (loop [z z]
+    (cond
+      (z/end? z) nil
+
+      (:line (meta (z/node z)))
+      (-> z z/node meta (select-keys [:line :column]) (assoc :form (z/node z)))
+
+      :else (recur (z/up z)))))
+
+(defn find-uses
   [source-seq syms]
   (loop [z (zipper source-seq)
          found {}]
@@ -67,13 +80,10 @@ into the namespace."
 
       (and (symbol? (z/node z)) (syms (z/node z)))
       (recur (z/next z)
-             (let [f (-> z z/up z/node)]
-               (update found
-                      (symbol (name (z/node z)))
-                      conj
-                      {:form f
-                       :line (-> f meta :line)
-                       :col (-> f meta :column)})))
+             (update found
+                     (sym-name (z/node z))
+                     conj
+                     (nearest-numbered z)))
 
       :else (recur (z/next z) found))))
 
@@ -101,6 +111,49 @@ into the namespace."
                    set)]
     (set/union aliases full refers)))
 
+(defn remove-definitions
+  "Remove usages of a var that are just it's definition"
+  [var-meta uses]
+  ;(println (:name var-meta) "defined on line" (:line var-meta) )
+  ;(prn var-meta)
+  (->> uses (filter (fn [{l :line}] (= l (:line var-meta))))))
+
+(defn analyze
+  [{:keys [uses-from in-target target-source]}]
+  (->> (find-uses
+         target-source
+         (qualified-symbols uses-from in-target))
+       (into
+         {}
+         (comp (map (fn [[sym uses]]
+                      [sym (map #(assoc % :ns in-target) uses)]))
+               (if (= uses-from in-target)
+                 (let [pubs (ns-publics uses-from)]
+                   ;(prn "pubs" pubs)
+                   ;(println "Filter public uses")
+                   (map (fn [[sym uses]]
+                          ;(println "filtering use of " sym (sym-name sym) (pubs (sym-name sym)))
+                          [sym (remove-definitions (meta (pubs (sym-name sym))) uses)])))
+                 (map identity))))))
+
+(defn print-uses
+  [project-ns pub-uses]
+  (println project-ns)
+  (println "==========")
+  (prn)
+  (doseq [[sym sym-uses] pub-uses]
+    (println "## Uses of " (str "`" project-ns "/" sym "`"))
+    (println)
+    (doseq [[used-ns sym-used] sym-uses]
+      (println "### Uses in " (str "`" used-ns "`"))
+      (println)
+      (doseq [{:keys [line column form ns]} (sort-by :line sym-used)]
+        (println "At line" line "column" column)
+        (println)
+        (println "```clojure")
+        (pprint/pprint form)
+        (println "```")))))
+
 (defn find-dependencies
   [source-paths]
   (let [source-path-dirs (map io/file source-paths)
@@ -122,30 +175,17 @@ into the namespace."
                          (read-file (LineNumberingPushbackReader. r) ns))
                        rest ; drop the namespace declaration
                        (swap! sources assoc ns))))]
-      (doall
-        (for [project-ns project-nses]
-          (do (binding [*out* *err*] (require project-ns))
-              (let [dependents (tnd/immediate-dependents (::tnt/deps project-graph) project-ns)]
-                (println project-ns)
-                (println "==========")
-                (prn)
-                (let [pub-uses (->>
-                                 (for [dependent dependents]
-                                   (do
-                                     (binding [*out* *err*] (require dependent))
-                                     (->> (analyze-source-for
-                                          (source-of dependent)
-                                          (qualified-symbols project-ns dependent))
-                                        (into
-                                          {}
-                                          (map (fn [[sym uses]]
-                                                 [sym (map #(assoc % :ns dependent) uses)]))))))
-                                 (apply merge-with concat))]
-                  (doseq [[sym sym-used] pub-uses]
-                    (println "## Uses of `" sym "`")
-                    (doseq [{:keys [line col form ns]} sym-used]
-                      (println "At line" line "column" col "of" ns)
-                      (println)
-                      (println "```")
-                      (pprint/pprint form)
-                      (println "```")))))))))))
+      (doseq [project-ns project-nses]
+        (binding [*out* *err*] (require project-ns))
+        (let [dependents (tnd/immediate-dependents (::tnt/deps project-graph) project-ns)
+              pub-uses (->> (for [dependent dependents]
+                              (do
+                                (binding [*out* *err*] (require dependent))
+                                (analyze
+                                  {:uses-from project-ns
+                                   :in-target dependent
+                                   :target-source (source-of dependent)})))
+                            (apply merge-with concat)
+                            (map (fn [[sym uses]]
+                                   [sym (group-by :ns uses)])))]
+          (print-uses project-ns pub-uses))))))
