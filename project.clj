@@ -1,6 +1,6 @@
-(defproject lein-depdocs "0.1.0-SNAPSHOT"
+(defproject lein-depdocs "1.0.0"
   :description "Leiningen plugin for automatically generating usage documentation"
-  :url "http://example.com/FIXME"
+  :url "https://github.com/jamesnvc/lein-depdocs"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :eval-in-leiningen true
