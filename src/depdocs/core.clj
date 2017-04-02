@@ -45,6 +45,13 @@ into the namespace."
     (do-read (careful-refer (create-ns init-ns)))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn debug
+  [& args]
+  (binding [*out* *err*]
+    (apply prn args)))
+
+(defn tee [x] (debug x) x)
+
 (defn zipper
   [data]
   (z/zipper
@@ -58,7 +65,7 @@ into the namespace."
         (with-meta (meta n))))
     data))
 
-(def sym-name (comp name symbol))
+(def sym-name (comp symbol name))
 
 (defn nearest-numbered
   [z]
@@ -91,32 +98,32 @@ into the namespace."
   "Get a set of the symbols that the public vars from `project-ns` can be
   referred to as in `dependent`"
   [project-ns dependent]
-  (let [?alias (->> (ns-aliases dependent)
-                    (filter (fn [[alias ns]] (= (ns-name ns) project-ns)))
-                    ffirst)
-        publics (ns-publics project-ns)
-        aliases (when ?alias
-                  (into
-                    #{}
-                    (map (fn [s] (symbol (str ?alias) (str s))))
-                    (keys publics)))
-        full (into
-               #{}
-               (map (fn [s] (symbol (str project-ns) (str s))))
-               (keys publics))
-        refers (-> (ns-refers dependent)
-                   map-invert
-                   (select-keys (vals publics))
-                   vals
-                   set)]
-    (set/union aliases full refers)))
+  (if (= project-ns dependent)
+    (set (keys (ns-publics project-ns)))
+    (let [?alias (->> (ns-aliases dependent)
+                      (filter (fn [[alias ns]] (= (ns-name ns) project-ns)))
+                      ffirst)
+          publics (ns-publics project-ns)
+          aliases (when ?alias
+                    (into
+                      #{}
+                      (map (fn [s] (symbol (str ?alias) (str s))))
+                      (keys publics)))
+          full (into
+                 #{}
+                 (map (fn [s] (symbol (str project-ns) (str s))))
+                 (keys publics))
+          refers (-> (ns-refers dependent)
+                     map-invert
+                     (select-keys (vals publics))
+                     vals
+                     set)]
+      (set/union aliases full refers))))
 
 (defn remove-definitions
-  "Remove usages of a var that are just it's definition"
+  "Remove usages of a var that are just its own definition"
   [var-meta uses]
-  ;(println (:name var-meta) "defined on line" (:line var-meta) )
-  ;(prn var-meta)
-  (->> uses (filter (fn [{l :line}] (= l (:line var-meta))))))
+  (->> uses (remove (fn [{l :line}] (= l (:line var-meta))))))
 
 (defn analyze
   [{:keys [uses-from in-target target-source]}]
@@ -129,10 +136,7 @@ into the namespace."
                       [sym (map #(assoc % :ns in-target) uses)]))
                (if (= uses-from in-target)
                  (let [pubs (ns-publics uses-from)]
-                   ;(prn "pubs" pubs)
-                   ;(println "Filter public uses")
                    (map (fn [[sym uses]]
-                          ;(println "filtering use of " sym (sym-name sym) (pubs (sym-name sym)))
                           [sym (remove-definitions (meta (pubs (sym-name sym))) uses)])))
                  (map identity))))))
 
@@ -141,18 +145,21 @@ into the namespace."
   (println project-ns)
   (println "==========")
   (prn)
-  (doseq [[sym sym-uses] pub-uses]
-    (println "## Uses of " (str "`" project-ns "/" sym "`"))
-    (println)
-    (doseq [[used-ns sym-used] sym-uses]
-      (println "### Uses in " (str "`" used-ns "`"))
+  (let [pubs (ns-publics project-ns)]
+    (doseq [[sym sym-uses] pub-uses]
+      (println "## Uses of " (str "`" project-ns "/" sym "`"))
       (println)
-      (doseq [{:keys [line column form ns]} (sort-by :line sym-used)]
-        (println "At line" line "column" column)
+      (println "Defined on line" (:line (meta (get pubs sym))))
+      (println)
+      (doseq [[used-ns sym-used] sym-uses]
+        (println "### Uses in " (str "`" used-ns "`"))
         (println)
-        (println "```clojure")
-        (pprint/pprint form)
-        (println "```")))))
+        (doseq [{:keys [line column form ns]} (sort-by :line sym-used)]
+          (println "At line" line "column" column)
+          (println)
+          (println "```clojure")
+          (pprint/pprint form)
+          (println "```"))))))
 
 (defn find-dependencies
   [source-paths]
@@ -171,14 +178,15 @@ into the namespace."
                      first)))
             (source-of [ns]
               (or (@sources ns)
-                  (->> (with-open [r (io/reader (ns->file ns))]
-                         (read-file (LineNumberingPushbackReader. r) ns))
-                       rest ; drop the namespace declaration
-                       (swap! sources assoc ns))))]
+                  (-> (with-open [r (io/reader (ns->file ns))]
+                        (read-file (LineNumberingPushbackReader. r) ns))
+                      rest ; drop the namespace declaration
+                      (->> (swap! sources assoc ns))
+                      (get ns))))]
       (doseq [project-ns project-nses]
         (binding [*out* *err*] (require project-ns))
         (let [dependents (tnd/immediate-dependents (::tnt/deps project-graph) project-ns)
-              pub-uses (->> (for [dependent dependents]
+              pub-uses (->> (for [dependent (conj dependents project-ns)]
                               (do
                                 (binding [*out* *err*] (require dependent))
                                 (analyze
