@@ -6,7 +6,7 @@ A Leiningen plugin to generate dependency documentation
 
 ## Usage
 
-Put `[depdocs "1.0.0"]` into the `:plugins` vector of your `:user`
+Put `[lein-depdocs "1.0.0"]` into the `:plugins` vector of your `:user`
 profile.
 
 The plugin outputs markdown, so you can use it as follows (using [cmark-gfm](https://github.com/github/cmark/)).
