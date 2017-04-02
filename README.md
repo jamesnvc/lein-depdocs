@@ -2,6 +2,8 @@
 
 A Leiningen plugin to generate dependency documentation
 
+[![Clojars Project](https://img.shields.io/clojars/v/lein-depdocs.svg)](https://clojars.org/lein-depdocs)
+
 ## Usage
 
 Put `[depdocs "1.0.0"]` into the `:plugins` vector of your `:user`
