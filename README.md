@@ -11,6 +11,41 @@ The plugin outputs markdown, so you can use it as follows (using [cmark-gfm](htt
 
     $ lein depdocs | cmark-gfm > docs/usage_docs.html
 
+Example output:
+
+<hr>
+
+rookie.common.util
+==========
+
+## Uses of  `rookie.common.util/ensure-coll`
+
+Defined on line 11
+
+### Uses in  `rookie.server.db`
+
+At line 124 column 15
+
+```clojure
+(map ensure-coll props)
+```
+## Uses of  `rookie.common.util/nice-count`
+
+Defined on line 3
+
+## Uses of  `rookie.common.util/if?`
+
+Defined on line 7
+
+### Uses in  `rookie.common.util`
+
+At line 11 column 18
+
+```clojure
+(if? coll? identity list)
+```
+<hr>
+
 ## License
 
 Copyright © 2017 James Cash
