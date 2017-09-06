@@ -12,7 +12,9 @@
   (:import
     (clojure.lang LineNumberingPushbackReader)))
 
-;; From lein-kibit
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; From kibit - https://github.com/jonase/kibit
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defn- careful-refer
   "Refers into the provided namespace all public vars from clojure.core
